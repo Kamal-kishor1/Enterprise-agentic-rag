@@ -1,0 +1,46 @@
+# Environment variables & secrets (CRITICAL)
+.env
+.env.local
+.env.*.local
+
+# Python Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+
+# Unused / archive files
+unused/
+
+# Documentation and Markdown files
+docs/
+doc/
+*.md
+!README.md
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Observability & local caches
+.logfire/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Processed large data (optional / uncomment if needed)
+# processed_data/
