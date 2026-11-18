@@ -1,12 +1,12 @@
 import logfire
-from langchain_groq import ChatGroq
+from app.services.llm_gateway import gateway_llm
 
 from app.agents.state import AgentState
 from app.config import settings
 
 # 1. Cap output tokens to 550 tokens (~2,200 characters)
 # This prevents runaway token generation and ensures we never blow the Groq 8k TPM limit.
-llm = ChatGroq(
+llm = gateway_llm(
     api_key=settings.GROQ_API_KEY,
     model=settings.GROQ_MODEL,
     temperature=0.1,
