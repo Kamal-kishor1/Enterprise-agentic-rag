@@ -1,5 +1,8 @@
 from concurrent.futures import thread
 
+import json
+from fastapi.responses import StreamingResponse
+
 import logfire
 import os
 from dotenv import load_dotenv
@@ -60,7 +63,7 @@ def get_graph_image():
 
 
 @app.post("/query")
-def query(request: QueryRequest):
+async def query(request: QueryRequest):
     """
     Executes the LangGraph RAG flow with memory using a Post request.
     """
@@ -81,7 +84,7 @@ def query(request: QueryRequest):
     # new thread id and continuously creating new thread id
 
     try:
-        final_output = rag_agent.invoke(initial_state, config=config)
+        final_output = await rag_agent.ainvoke(initial_state, config=config)
 
         return {
             "question": q,
@@ -100,3 +103,44 @@ def query(request: QueryRequest):
             "status": "error",
             "sources": [],
         }
+
+
+@app.post("/query/stream")
+async def query_stream(request: QueryRequest):
+    """
+    Streams LLM tokens in real-time as Server-Sent Events (SSE).
+    """
+
+    q = request.q  # query
+    thread_id = request.thread_id  # session id
+
+    initial_state = {
+        "messages": [{"role": "user", "content": q}],
+        "current_query": q,
+        "documents": [],
+        "plan": ["Start"],
+        "status": "Initializing Graph...",
+    }
+
+    # Configuration for Memory (Thread id)
+    config = {"configurable": {"thread_id": thread_id}}
+    # new thread id and continuously creating new thread id
+
+    async def token_generator():
+        # astream_events v2 captures real-time token chunks from the LLM
+        async for event in rag_agent.astream_events(
+            initial_state, config=config, version="v2"
+        ):
+            kind = event["event"]
+            # When the Responder's ChatGroq emits a new token chunk
+            if kind == "on_chat_model_stream":
+                # Ensure the token comes from the responder node, not planner
+                node_name = event.get("metadata", {}).get("langgraph_node", "")
+                if node_name == "responder":
+                    chunk_content = event["data"]["chunk"].content
+                    if chunk_content:
+                        # Send text chunk directly to the stream
+                        yield chunk_content
+
+    # media_type="text/plain" or "text/event-stream" keeps the HTTP pipe open
+    return StreamingResponse(token_generator(), media_type="text/plain")
