@@ -3,6 +3,11 @@ import logfire
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from app.config import settings
 
+from fastembed.sparse.sparse_text_embedding import SparseTextEmbedding
+
+# BM25 Sparse Embedding Model Singleton
+_bm25_model = None
+
 BATCH_SIZE = 50
 _GEMINI_DIM = 3072
 _FALLBACK_DIM = 768  # all-mpnet-base-v2
@@ -10,6 +15,29 @@ _FALLBACK_DIM = 768  # all-mpnet-base-v2
 
 _active_model = None
 _model_type: str | None = None  # "gemini" or "fallback"
+
+
+# Initialize the BM25 Model Singleton
+def get_bm25_model():
+    global _bm25_model
+    if _bm25_model is None:
+        _bm25_model = SparseTextEmbedding(model_name="Qdrant/bm25")
+    return _bm25_model
+
+
+# Add the helper function embed_sparse(texts: list[str])
+def embed_sparse(texts: list[str]):
+    """Generate sparse BM25 representations (indices & Values) for chunks."""
+    model = get_bm25_model()
+
+    return list(model.embed(texts))
+
+
+# Add a query helper function
+def embed_sparse_query(query: str):
+    """Generate a single sparse BM25 vector for search queries."""
+    model = get_bm25_model()
+    return list(model.embed([query]))[0]
 
 
 def _probe_gemini():
@@ -25,7 +53,7 @@ def _probe_gemini():
 
     except Exception as e:
         logfire.warning(
-            f" Gemini probe failded: {e}. Will use sentence-trandormers fallback."
+            f" Gemini probe failded: {e}. Will use sentence-transformers fallback."
         )
         return None
 

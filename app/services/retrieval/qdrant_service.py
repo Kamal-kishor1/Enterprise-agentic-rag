@@ -6,7 +6,8 @@ from qdrant_client import QdrantClient
 from tenacity import retry, stop_after_attempt, wait_fixed
 
 from app.config import settings
-from app.services.retrieval.embeddings import embed_query
+from qdrant_client.http import models
+from app.services.retrieval.embeddings import embed_query, embed_sparse_query
 
 # 1. Initialize Qdrant Client with 10.0s connection timeout for AWS cloud latency
 client = QdrantClient(
@@ -65,7 +66,9 @@ def _search_local_fallback(limit: int = 15) -> list[dict]:
                 for f in files:
                     if f.endswith(".json"):
                         try:
-                            with open(os.path.join(root, f), "r", encoding="utf-8") as fp:
+                            with open(
+                                os.path.join(root, f), "r", encoding="utf-8"
+                            ) as fp:
                                 data = json.load(fp)
                                 filename = data.get("filename", f)
                                 for chunk in data.get("chunks", []):
@@ -88,17 +91,60 @@ def _search_local_fallback(limit: int = 15) -> list[dict]:
     # wait=wait_fixed(0.5),
     reraise=True,
 )
-def _search_qdrant_direct(query: str, limit: int = 15):
-    """Direct cloud search with strict timeout and fast 0.5s retry."""
-    query_vector = embed_query(query)
+# def _search_qdrant_direct(query: str, limit: int = 15):
+#     """Direct cloud search with strict timeout and fast 0.5s retry."""
+#     query_vector = embed_query(query)
 
+#     response = client.query_points(
+#         collection_name=settings.QDRANT_COLLECTION,
+#         query=query_vector,
+#         limit=limit,
+#         with_payload=True,
+#     )
+
+#     results = []
+#     for res in response.points:
+#         results.append(
+#             {
+#                 "content": res.payload.get("text", ""),
+#                 "source": res.payload.get("source", "Unknown"),
+#                 "score": res.score,
+#             }
+#         )
+#     return results
+
+
+def _search_qdrant_direct(query: str, limit: int = 15):
+    """
+    Hybrid Search (Dense + Sparse BM25) fused via Reciprocal Rank Fusion (RRF).
+    """
+    dense_vector = embed_query(query)
+    sparse_obj = embed_sparse_query(query)
+    # Qdrant Native RRF Fusion:
+    # 1. Prefetches top `limit` dense matches
+    # 2. Prefetches top `limit` sparse BM25 matches
+    # 3. Fuses both rankings using RRF score
     response = client.query_points(
         collection_name=settings.QDRANT_COLLECTION,
-        query=query_vector,
+        prefetch=[
+            models.Prefetch(
+                query=dense_vector,
+                using="dense",
+                limit=limit,
+            ),
+            models.Prefetch(
+                query=models.SparseVector(
+                    indices=sparse_obj.indices.tolist(),
+                    values=sparse_obj.values.tolist(),
+                ),
+                using="sparse",
+                limit=limit,
+            ),
+        ],
+        query=models.FusionQuery(fusion=models.Fusion.RRF),
         limit=limit,
         with_payload=True,
     )
-
     results = []
     for res in response.points:
         results.append(

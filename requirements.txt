@@ -20,6 +20,8 @@ sentence-transformers       # Local fallback embeddings (mxbai-embed-large-v1)
 
 # --- VECTOR DB & RETRIEVAL ---
 qdrant-client               # Vector Database for semantic search
+fastembed                   # Fast BM25 sparse embeddings for Qdrant hybrid search
+
 
 # --- LANGCHAIN & AGENTIC ORCHESTRATION ---
 langchain                   # Core LLM orchestration
