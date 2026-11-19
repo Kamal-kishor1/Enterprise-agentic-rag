@@ -27,7 +27,7 @@ model_list = [
     },
     # Secondary Fallback: Groq 20B with Fallback API Key (High quota, zero-downtime Fallover)
     {
-        "model_name": "enterprise-llm",
+        "model_name": "enterprise-llm-fallback",
         "litellm_params": {
             "model": "groq/openai/gpt-oss-20b",
             "api_key": settings.GROQ_FALLBACK_API_KEY or settings.GROQ_API_KEY,
@@ -40,8 +40,7 @@ model_list = [
 # 2. Initialize LiteLLM Router with Fallback Policy
 router = Router(
     model_list=model_list,
-    routing_strategy="simple-shuffle",
-    num_retries=1,
+    num_retries=2,
     timeout=10.0,
     fallbacks=[{"enterprise-llm": ["enterprise-llm-fallback"]}],
 )
