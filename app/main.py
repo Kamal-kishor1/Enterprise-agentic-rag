@@ -21,6 +21,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.agents.graph import rag_agent
 from app.services.cache_service import get_cached_query, set_cached_query
+from app.services.guardrails import (
+    sanitize_pii,
+    check_prompt_injection,
+    sanitize_output,
+)
 
 # Initialize FastAPI
 app = FastAPI(
@@ -70,7 +75,22 @@ async def query(request: QueryRequest):
     Executes the LangGraph RAG flow with memory using a Post request.
     """
 
-    q = request.q  # query
+    # 1. PII Sanitization
+    clean_query, pii_found = sanitize_pii(request.q)
+
+    # 2. Prompt Injection Guardrail (Blocks attacks in <120ms without invoking RAG)
+    is_attack, score = check_prompt_injection(clean_query)
+    if is_attack:
+        return {
+            "question": request.q,
+            "answer": "Security Alert: This request was blocked because it triggered prompt injection and safety guardrails.",
+            "thought_process": ["Security policy violation detected."],
+            "status": "blocked",
+            "sources": [],
+            "cached": False,
+        }
+
+    q = clean_query  # query
     thread_id = request.thread_id  # session id
 
     initial_state = {
@@ -96,7 +116,7 @@ async def query(request: QueryRequest):
 
         result = {
             "question": q,
-            "answer": final_output.get("final_answer"),
+            "answer": sanitize_output(final_output.get("final_answer") or ""),
             "thought_process": final_output.get("plan"),
             "status": final_output.get("status"),
             "sources": final_output.get("documents", []),
@@ -124,8 +144,18 @@ async def query_stream(request: QueryRequest):
     """
     Streams LLM tokens in real-time as Server-Sent Events (SSE).
     """
+    # 1. PII Sanitization
+    clean_query, _ = sanitize_pii(request.q)
+    # 2. Prompt Injection Guardrail
+    is_attack, score = check_prompt_injection(clean_query)
+    if is_attack:
 
-    q = request.q  # query
+        async def block_stream():
+            yield "Security Alert: This request was blocked by enterprise security guardrails."
+
+        return StreamingResponse(block_stream(), media_type="text/plain")
+
+    q = clean_query  # query
     thread_id = request.thread_id  # session id
 
     initial_state = {
