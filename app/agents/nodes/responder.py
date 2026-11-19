@@ -1,18 +1,12 @@
 import logfire
-from app.services.llm_gateway import gateway_llm
+from app.services.llm_gateway import gateway_llm_streaming
 
 from app.agents.state import AgentState
-from app.config import settings
 
 # 1. Cap output tokens to 550 tokens (~2,200 characters)
 # This prevents runaway token generation and ensures we never blow the Groq 8k TPM limit.
-llm = gateway_llm(
-    api_key=settings.GROQ_API_KEY,
-    model=settings.GROQ_MODEL,
-    temperature=0.1,
-    max_tokens=550,  # Strict token budget
-    streaming=True,  # Enables token-by-token emission in astream_events!
-)
+# Responder uses streaming gateway so astream_events receives live tokens
+llm = gateway_llm_streaming
 
 
 async def generate_node(state: AgentState):

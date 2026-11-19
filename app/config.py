@@ -17,6 +17,9 @@ class Settings:
     GROQ_MODEL = os.getenv("GROQ_MODEL")
     GROQ_FALLBACK_API_KEY = os.getenv("GROQ_FALLBACK_API_KEY")
 
+    # PostgreSQL Database URL for persistent session memory
+    DATABASE_URL = os.getenv("DATABASE_URL")
+
     ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(
         ","
     )  # Default to all origins if not set

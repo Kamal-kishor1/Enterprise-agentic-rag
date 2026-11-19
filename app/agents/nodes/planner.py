@@ -1,13 +1,11 @@
 from app.agents.state import AgentState
-from app.config import settings
 from app.services.llm_gateway import gateway_llm
 
 import logfire
 
 # Direct groq call - the llm Gateway (litellm)
-llm = gateway_llm(
-    api_key=settings.GROQ_API_KEY, model=settings.GROQ_MODEL, temperature=0.2
-)
+# Planner uses non-streaming gateway for fast internal intent classification
+llm = gateway_llm
 
 
 async def planner_node(state: AgentState):
