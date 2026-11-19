@@ -1,6 +1,7 @@
 from concurrent.futures import thread
 
 import json
+from unittest import result
 from fastapi.responses import StreamingResponse
 
 import logfire
@@ -19,6 +20,7 @@ from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.agents.graph import rag_agent
+from app.services.cache_service import get_cached_query, set_cached_query
 
 # Initialize FastAPI
 app = FastAPI(
@@ -79,20 +81,32 @@ async def query(request: QueryRequest):
         "status": "Initializing Graph...",
     }
 
-    # Configuration for Memory (Thread id)
+    # 1. Check Cache First
+    cached_response = await get_cached_query(q)
+    if cached_response:
+        cached_response["cached"] = True
+        return cached_response
+
+    # 2. Configuration for Memory (Thread id)
     config = {"configurable": {"thread_id": thread_id}}
     # new thread id and continuously creating new thread id
 
     try:
         final_output = await rag_agent.ainvoke(initial_state, config=config)
 
-        return {
+        result = {
             "question": q,
             "answer": final_output.get("final_answer"),
             "thought_process": final_output.get("plan"),
             "status": final_output.get("status"),
             "sources": final_output.get("documents", []),
+            "cached": False,
         }
+
+        # 3. Store verified answer in cache asynchronously for future user
+        await set_cached_query(q, result)
+
+        return result
 
     except Exception as e:
         logfire.error(f" Backend Execution Failed: {e}")
@@ -122,12 +136,24 @@ async def query_stream(request: QueryRequest):
         "status": "Initializing Graph...",
     }
 
-    # Configuration for Memory (Thread id)
+    # 1. Check Cache for instant stream emission
+    cached_response = await get_cached_query(q)
+    if cached_response:
+        # Stream the cached answer as a single event
+        async def cached_stream():
+            yield cached_response.get("answer", "")
+
+        return StreamingResponse(cached_stream(), media_type="text/plain")
+
+    # 2. Configuration for Memory (Thread id)
     config = {"configurable": {"thread_id": thread_id}}
     # new thread id and continuously creating new thread id
 
     async def token_generator():
-        # astream_events v2 captures real-time token chunks from the LLM
+        # Initialize accumulator list
+        full_response = []
+
+        # 3. astream_events v2 captures real-time token chunks from the LLM
         async for event in rag_agent.astream_events(
             initial_state, config=config, version="v2"
         ):
@@ -139,8 +165,17 @@ async def query_stream(request: QueryRequest):
                 if node_name == "responder":
                     chunk_content = event["data"]["chunk"].content
                     if chunk_content:
+                        # Collect each chunk
+                        full_response.append(chunk_content)
+
                         # Send text chunk directly to the stream
                         yield chunk_content
+
+        # Store streamed response in cache once generation completes
+        if full_response:
+            await set_cached_query(
+                q, {"question": q, "answer": "".join(full_response), "sources": []}
+            )
 
     # media_type="text/plain" or "text/event-stream" keeps the HTTP pipe open
     return StreamingResponse(token_generator(), media_type="text/plain")

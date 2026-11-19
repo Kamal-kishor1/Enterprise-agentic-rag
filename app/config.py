@@ -20,6 +20,12 @@ class Settings:
     # PostgreSQL Database URL for persistent session memory
     DATABASE_URL = os.getenv("DATABASE_URL")
 
+    # Redis / In-Memory Response Cache
+    REDIS_URL = os.getenv("REDIS_URL")
+    CACHE_TTL_SECONDS = int(
+        os.getenv("CACHE_TTL_SECONDS") or "3600"
+    )  # Default to 1 hour if not set
+
     ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(
         ","
     )  # Default to all origins if not set
