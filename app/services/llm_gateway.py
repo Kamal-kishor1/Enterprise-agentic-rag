@@ -1,15 +1,19 @@
 import os
+
+os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = (
+    "True"  # Prevents slow network requests for model price maps
+)
 import logfire
 from typing import Any, List, Optional
 from litellm import Router
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import BaseMessage, AIMessage
-from langchain_core.outputs import ChatResult, ChatGeneration
+from langchain_core.messages import BaseMessage, AIMessage, AIMessageChunk
+from langchain_core.outputs import ChatResult, ChatGeneration, ChatGenerationChunk
 
 from app.config import settings
 
-# 1. Configure the Router with Primary (Groq) and Fallback (Gemini)
+# 1. Configure the Router with Primary (Groq) and Fallback (Groq)
 model_list = [
     # Primary: Fast inference on Groq
     {
@@ -21,12 +25,12 @@ model_list = [
             "temperature": 0.1,
         },
     },
-    # Secondary Fallback: Google Gemini 1.5 Flash (High quota, zero-downtime)
+    # Secondary Fallback: Groq 20B with Fallback API Key (High quota, zero-downtime Fallover)
     {
         "model_name": "enterprise-llm",
         "litellm_params": {
-            "model": "gemini/gemini-1.5-flash",
-            "api_key": settings.GEMINI_API_KEY,
+            "model": "groq/openai/gpt-oss-20b",
+            "api_key": settings.GROQ_FALLBACK_API_KEY or settings.GROQ_API_KEY,
             "max_tokens": 550,
             "temperature": 0.1,
         },
@@ -39,7 +43,7 @@ router = Router(
     routing_strategy="simple-shuffle",
     num_retries=1,
     timeout=10.0,
-    fallbacks=[{"enterprise-llm": ["gemini/gemini-1.5-flash"]}],
+    fallbacks=[{"enterprise-llm": ["enterprise-llm-fallback"]}],
 )
 
 
@@ -47,10 +51,11 @@ router = Router(
 class ResilientLLMGateway(BaseChatModel):
     """
     Enterprise LLM Gateway providing automatic multi-model failover (Groq -> Gemini).
-    Fully compatible with LangGraph async invocation and streaming.
+    Fully compatible with LangGraph async invocation and SSE streaming.
     """
 
     model_name: str = "enterprise-llm"
+    streaming: bool = False
 
     @property
     def _llm_type(self) -> str:
@@ -89,12 +94,44 @@ class ResilientLLMGateway(BaseChatModel):
         with logfire.span("LLM Gateway Execution", model=self.model_name):
             formatted = self._format_messages(messages)
             try:
-                resp = await router.acompletion(
-                    model=self.model_name, messages=formatted, **kwargs
+                if self.streaming:
+                    # Stream tokens in real-time and dispatch to LangChain's callback manager
+                    response = await router.acompletion(
+                        model=self.model_name,
+                        messages=formatted,
+                        stream=True,
+                        **kwargs,
+                    )
+                    collected_tokens = []
+                    async for chunk in response:
+                        delta = chunk.choices[0].delta.content or ""
+                        if delta:
+                            collected_tokens.append(delta)
+                            if run_manager:
+                                # This triggers the 'on_chat_model_stream' event in LangGraph!
+                                await run_manager.on_llm_new_token(
+                                    delta,
+                                    chunk=ChatGenerationChunk(
+                                        message=AIMessageChunk(content=delta)
+                                    ),
+                                )
+                    content = "".join(collected_tokens)
+                else:
+                    resp = await router.acompletion(
+                        model=self.model_name,
+                        messages=formatted,
+                        stream=False,
+                        **kwargs,
+                    )
+                    content = resp.choices[0].message.content
+
+                used_model = (
+                    getattr(resp, "model", "unknown")
+                    if not self.streaming
+                    else "enterprise-llm-stream"
                 )
-                used_model = getattr(resp, "model", "unknown")
                 logfire.info(f"Gateway routed to: {used_model}", model_used=used_model)
-                content = resp.choices[0].message.content
+
                 return ChatResult(
                     generations=[ChatGeneration(message=AIMessage(content=content))]
                 )
@@ -103,5 +140,9 @@ class ResilientLLMGateway(BaseChatModel):
                 raise e
 
 
-# Export the singleton gateway instance
-gateway_llm = ResilientLLMGateway()
+# Export dedicated instances:
+# 1. Non-streaming for planner (fast internal decisions)
+gateway_llm = ResilientLLMGateway(streaming=False)
+
+# 2. Streaming for responder (real-time SSE token emission)
+gateway_llm_streaming = ResilientLLMGateway(streaming=True)
