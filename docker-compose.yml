@@ -1,0 +1,127 @@
+services:
+  # 1. PostgreSQL - Durable Session Memory with Required Password
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: rag_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-rag_memory}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-rag_memory}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rag-network
+
+  # 2. Redis - Authenticated Response Cache (Protected with Password)
+
+  redis:
+    image: redis:7-alpine
+    container_name: rag_redis
+    restart: unless-stopped
+    command:
+      [
+        "redis-server",
+        "--requirepass",
+        "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}",
+      ]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "-a",
+          "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}",
+          "ping",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - rag-network
+
+  # 3. Backend API - FastAPI + LangGraph Agent + Guardrails
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: backend
+    container_name: rag_backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8003}:8003"
+    environment:
+      # Internal Microservice Connections
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rag_memory}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379/0
+      - PORT=8003
+
+      # Mandatory Production AI / Vector Credentials
+      - GROQ_API_KEY=${GROQ_API_KEY:?Set GROQ_API_KEY in .env}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:?Set GEMINI_API_KEY in .env}
+      - QDRANT_CLUSTER_ENDPOINT=${QDRANT_CLUSTER_ENDPOINT:?Set QDRANT_CLUSTER_ENDPOINT in .env}
+
+      # Optional / Fallback Credentials
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - GROQ_FALLBACK_API_KEY=${GROQ_FALLBACK_API_KEY:-}
+      - GROQ_MODEL=${GROQ_MODEL:-openai/gpt-oss-120b}
+      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
+      - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-3600}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8003/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - rag-network
+
+  # 4. Frontend UI - Streamlit Interactive Workspace
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: frontend
+    container_name: rag_frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-8501}:8501"
+    environment:
+      - BACKEND_URL=http://backend:8003
+      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - rag-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  rag-network:
+    driver: bridge

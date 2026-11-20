@@ -55,6 +55,14 @@ def home():
     return {"message": " LangGraph RAG API is live. "}
 
 
+@app.get("/health")
+def health_check():
+    """
+    Health check endpoint to verify the API is running.
+    """
+    return {"status": "healthy"}
+
+
 @app.get("/graph")
 def get_graph_image():
     """
