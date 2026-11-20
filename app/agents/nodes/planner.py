@@ -1,16 +1,14 @@
 from app.agents.state import AgentState
-from app.config import settings
-from langchain_groq import ChatGroq
+from app.services.llm_gateway import gateway_llm
 
 import logfire
 
-# Direct groq call - the llm Gateway (Portkey)
-llm = ChatGroq(
-    api_key=settings.GROQ_API_KEY, model=settings.GROQ_MODEL, temperature=0.2
-)
+# Direct groq call - the llm Gateway (litellm)
+# Planner uses non-streaming gateway for fast internal intent classification
+llm = gateway_llm
 
 
-def planner_node(state: AgentState):
+async def planner_node(state: AgentState):
     # the planner determines if a search is needed based on the entire conversation.
 
     # Get the conversation history (excluding the latest message)
@@ -33,17 +31,18 @@ def planner_node(state: AgentState):
     {user_message}
 
     Task:
-    1. If the latest message is a greeting (hi, hello) or question that can be
-    answered using ONLY the conversation history above (e.g., "what is the name"), respond "CONVERSATIONAL".
-    2. If it is a technical question about Kubernetes, Intel,
-    or Networking that requires fresh documentation,
-    output a refined search query.
+    1. If the latest message is a greeting (hi, hello) or conversational question that can be
+    answered using ONLY the conversation history above, respond "CONVERSATIONAL".
+    2. If it is a technical question requiring fresh documentation,
+    output a clean semantic search query (3 to 6 key terms).
+    DO NOT output web search operators (no "site:", no URLs, no Boolean operators).
 
-    Output ONLY "CONVERSATIONAL" or the search query.
+    Output ONLY "CONVERSATIONAL" or the clean search query string.
     """
 
     with logfire.span(" Planner Decision"):
-        decision = llm.invoke(prompt).content.strip()
+        res = await llm.ainvoke(prompt)
+        decision = res.content.strip()
         logfire.info(f"Intent identified: {decision}")
 
     if decision == "CONVERSATIONAL":

@@ -18,7 +18,11 @@ from app.ingestion.chunking.splitter import chunk_text
 from app.ingestion.loaders.html import parse_html
 from app.ingestion.loaders.pdf import parse_pdf
 from app.ingestion.loaders.text import parse_text
-from app.services.retrieval.embeddings import embed_texts, get_embedding_dim
+from app.services.retrieval.embeddings import (
+    embed_texts,
+    get_embedding_dim,
+    embed_sparse,
+)
 
 # Local folder where parsed + chunked JSON metadata is saved (replaces GCS processed bucket)
 PROCESSED_DATA_DIR = "processed_data"
@@ -82,27 +86,60 @@ def process_file(file_path: str, filename: str, source_type: str):
             local_path = save_processed_locally(processed_data, source_type, filename)
             logfire.info(f"Saved processed data → {local_path}")
 
-            # 4. Embed and index in Qdrant
+            # # 4. Embed and index in Qdrant
+            # with logfire.span("Vectorizing & Indexing"):
+            #     embeddings = embed_texts(chunks)
+            #     points = [
+            #         models.PointStruct(
+            #             id=str(uuid.uuid4()),
+            #             vector=vector,
+            #             payload={
+            #                 "text": chunk,
+            #                 "source": filename,
+            #                 "source_type": source_type,
+            #             },
+            #         )
+            #         for chunk, vector in zip(chunks, embeddings)
+            #     ]
+
+            #     qdrant_client.upsert(
+            #         collection_name=settings.QDRANT_COLLECTION,
+            #         points=points,
+            #     )
+            #     logfire.info(f"Indexed {len(points)} points to Qdrant from {filename}.")
+
+            # 4. Embed and index in Qdrant with Hybrid (Dense + Sparse) configuration
             with logfire.span("Vectorizing & Indexing"):
-                embeddings = embed_texts(chunks)
+                dense_embeddings = embed_texts(chunks)
+                sparse_embeddings = embed_sparse(chunks)
+
                 points = [
                     models.PointStruct(
                         id=str(uuid.uuid4()),
-                        vector=vector,
+                        vector={
+                            "dense": d_vec,
+                            "sparse": models.SparseVector(
+                                indices=s_vec.indices.tolist(),
+                                values=s_vec.values.tolist(),
+                            ),
+                        },
                         payload={
                             "text": chunk,
                             "source": filename,
                             "source_type": source_type,
                         },
                     )
-                    for chunk, vector in zip(chunks, embeddings)
+                    for chunk, d_vec, s_vec in zip(
+                        chunks, dense_embeddings, sparse_embeddings
+                    )
                 ]
-
                 qdrant_client.upsert(
                     collection_name=settings.QDRANT_COLLECTION,
                     points=points,
                 )
-                logfire.info(f"Indexed {len(points)} points to Qdrant from {filename}.")
+                logfire.info(
+                    f"Indexed {len(points)} hybrid points to Qdrant from {filename}."
+                )
 
         except Exception as e:
             logfire.error(f"Failed to process {filename}: {e}")
@@ -138,17 +175,38 @@ def run_universal_ingestion(
                     logfire.info(f"Collection '{settings.QDRANT_COLLECTION}' deleted.")
 
         # Recreate collection — dimension resolved at runtime after embedding model probe
+        # if not qdrant_client.collection_exists(settings.QDRANT_COLLECTION):
+        #     dim = get_embedding_dim()
+        #     qdrant_client.create_collection(
+        #         collection_name=settings.QDRANT_COLLECTION,
+        #         vectors_config=models.VectorParams(
+        #             size=dim,
+        #             distance=models.Distance.COSINE,
+        #         ),
+        #     )
+        #     logfire.info(
+        #         f"Created collection '{settings.QDRANT_COLLECTION}' ({dim}-dim, Cosine)."
+        #     )
+
+        # Recreat collection with Hybrid (Dense + Sparse) configuration
         if not qdrant_client.collection_exists(settings.QDRANT_COLLECTION):
             dim = get_embedding_dim()
             qdrant_client.create_collection(
                 collection_name=settings.QDRANT_COLLECTION,
-                vectors_config=models.VectorParams(
-                    size=dim,
-                    distance=models.Distance.COSINE,
-                ),
+                vectors_config={
+                    "dense": models.VectorParams(
+                        size=dim,
+                        distance=models.Distance.COSINE,
+                    )
+                },
+                sparse_vectors_config={
+                    "sparse": models.SparseVectorParams(
+                        index=models.SparseIndexParams(on_disk=False)
+                    )
+                },
             )
             logfire.info(
-                f"Created collection '{settings.QDRANT_COLLECTION}' ({dim}-dim, Cosine)."
+                f"Created Hybrid Qdrant collection '{settings.QDRANT_COLLECTION}' ({dim}-dim, Cosine, Hybrid)."
             )
 
         # Route to sub-folders or treat the whole dir as one source

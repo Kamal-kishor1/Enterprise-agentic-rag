@@ -81,56 +81,71 @@ if prompt := st.chat_input("Ask about your documentation..."):
         with st.chat_message("user", avatar=USER_AVATAR):
             st.markdown(prompt)
 
-        # Assistant Response
+        # Assistant Response with Real-Time SSE Token Streaming & Logfire Spans
         with st.chat_message("assistant", avatar=AI_AVATAR):
-            with st.status(" Agent is thinking...", expanded=True) as status:
-                try:
-                    # DISTRIBUTED TRACE: Calling Backend
-                    with logfire.span(" Calling RAG Backend"):
-                        # Get backend url from env, or ddefault to local if not set
-                        base_url = os.getenv("BACKEND_URL", "http://localhost:8000")
-                        url = f"{base_url}/query"
-                        payload = {
-                            "q": prompt,
-                            "thread_id": st.session_state.session_id,
-                        }
-                        response = requests.post(url, json=payload, timeout=60)
-                        data = response.json()
+            base_url = os.getenv("BACKEND_URL", "http://localhost:8000")
+            url = f"{base_url}/query/stream"
+            payload = {
+                "q": prompt,
+                "thread_id": st.session_state.session_id,
+            }
 
-                    # Show Reasoning Steps from Backend
+            def stream_response_with_telemetry():
+                # START LOGFIRE SPAN for the streaming lifecycle
+                with logfire.span(
+                    "Real-Time Stream Consumption",
+                    session_id=st.session_state.session_id,
+                    endpoint="/query/stream",
+                ):
+                    start_time = time.perf_counter()
+                    first_token_received = False
+                    total_chunks = 0
+                    total_chars = 0
 
-                    steps = data.get("thought_process", [])
-                    for step in steps:
-                        st.write(f" {step}")
+                    try:
+                        with requests.post(
+                            url, json=payload, stream=True, timeout=60
+                        ) as resp:
+                            if resp.status_code != 200:
+                                err_msg = f"Backend returned HTTP {resp.status_code}"
+                                logfire.error(f"Streaming HTTP Error: {err_msg}")
+                                yield f" **Error:** {err_msg}"
+                                return
 
-                    # --- SHOW SOURCES (NESTED EXPANDABLES) ---
-                    sources = data.get("sources", [])
+                            # Read stream chunk by chunk as generated
+                            for chunk in resp.iter_content(
+                                chunk_size=None, decode_unicode=True
+                            ):
+                                if chunk:
+                                    if not first_token_received:
+                                        first_token_received = True
+                                        ttft = time.perf_counter() - start_time
+                                        # Record Time-To-First-Token in Logfire telemetry!
+                                        logfire.info(
+                                            f" Time-to-First-Token (TTFT): {ttft:.3f}s",
+                                            ttft_seconds=ttft,
+                                        )
 
-                    if sources:
-                        with st.expander(" View Retrieved Context (Sources)"):
-                            for i, source in enumerate(sources):
-                                preview = source[:100].replace("\n", " ") + "..."
-                                with st.expander(f"Chunk {i + 1}: {preview}"):
-                                    st.info(source)
+                                    total_chunks += 1
+                                    total_chars += len(chunk)
+                                    yield chunk
 
-                except Exception as e:
-                    logfire.error(f" UI-Backend Connection Failed: {e}")
-                    status.update(label=" Connection Failed", state="error")
-                    st.error(f"Backend Offline or job failed: {e}")
-                    st.stop()
+                        # Log stream summary upon successful completion
+                        total_duration = time.perf_counter() - start_time
+                        logfire.info(
+                            "Stream completed successfully",
+                            total_duration_sec=total_duration,
+                            total_chunks=total_chunks,
+                            total_characters=total_chars,
+                        )
 
-            # Final Answer Streaming
-            answer_placeholder = st.empty()
-            full_answer = data.get("answer", "No response.")
+                    except Exception as e:
+                        logfire.error(f"Stream interrupted or failed: {e}")
+                        yield f"\n\n **Streaming Connection Interrupted:** {e}"
 
-            curr_text = ""
-            for char in full_answer:
-                curr_text += char
-                answer_placeholder.markdown(curr_text + "▌")
-                time.sleep(0.005)
+            # st.write_stream consumes the generator and renders tokens live
+            full_answer = st.write_stream(stream_response_with_telemetry())
 
-            answer_placeholder.markdown(full_answer)
             st.session_state.messages.append(
                 {"role": "assistant", "content": full_answer}
             )
-            logfire.info(" Chat cycle completed successfully.")
