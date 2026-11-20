@@ -153,7 +153,11 @@ async def query_stream(request: QueryRequest):
         async def block_stream():
             yield "Security Alert: This request was blocked by enterprise security guardrails."
 
-        return StreamingResponse(block_stream(), media_type="text/plain")
+        return StreamingResponse(
+            block_stream(),
+            media_type="text/plain",
+            headers={"X-Cache": "BYPASS", "X-Security": "BLOCKED"},
+        )
 
     q = clean_query  # query
     thread_id = request.thread_id  # session id
@@ -173,7 +177,11 @@ async def query_stream(request: QueryRequest):
         async def cached_stream():
             yield cached_response.get("answer", "")
 
-        return StreamingResponse(cached_stream(), media_type="text/plain")
+        return StreamingResponse(
+            cached_stream(),
+            media_type="text/plain",
+            headers={"X-Cache": "HIT", "X-Security": "PASSED"},
+        )
 
     # 2. Configuration for Memory (Thread id)
     config = {"configurable": {"thread_id": thread_id}}
@@ -208,4 +216,8 @@ async def query_stream(request: QueryRequest):
             )
 
     # media_type="text/plain" or "text/event-stream" keeps the HTTP pipe open
-    return StreamingResponse(token_generator(), media_type="text/plain")
+    return StreamingResponse(
+        token_generator(),
+        media_type="text/plain",
+        headers={"X-Cache": "MISS", "X-Security": "PASSED"},
+    )

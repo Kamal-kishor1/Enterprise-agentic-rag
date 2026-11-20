@@ -1,4 +1,5 @@
 import os
+import re
 import streamlit as st
 import requests
 import time
@@ -69,6 +70,25 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"], avatar=avatar):
         st.markdown(message["content"])
 
+        # Render metadata badges and sources for assistant messages
+        if message["role"] == "assistant":
+            meta = message.get("meta", {})
+            if meta.get("security") == "BLOCKED":
+                st.error(" Security Guardrails Triggered! Prompt Blocked.")
+            elif meta.get("cache") == "HIT":
+                st.caption(
+                    f" **Instant Cache Hit** • {meta.get('duration', 0)*1000:.1f}ms • 0 LLM Tokens"
+                )
+            elif meta.get("duration"):
+                st.caption(
+                    f" **Hybrid RAG Retrieval** • {meta.get('duration', 0):.2f}s • Dense + BM25 RRF"
+                )
+            sources = message.get("sources", [])
+            if sources:
+                with st.expander(" Verified Sources", expanded=False):
+                    for src in sources:
+                        st.markdown(f"- 📄 `{src}`")
+
 # Chat Input
 if prompt := st.chat_input("Ask about your documentation..."):
     # START TRACE: User Interaction
@@ -90,6 +110,13 @@ if prompt := st.chat_input("Ask about your documentation..."):
                 "thread_id": st.session_state.session_id,
             }
 
+            # Telemetry metadata captured from backend headers and timing
+            meta = {
+                "cache": "MISS",
+                "security": "PASSED",
+                "duration": 0.0,
+            }
+
             def stream_response_with_telemetry():
                 # START LOGFIRE SPAN for the streaming lifecycle
                 with logfire.span(
@@ -106,6 +133,10 @@ if prompt := st.chat_input("Ask about your documentation..."):
                         with requests.post(
                             url, json=payload, stream=True, timeout=60
                         ) as resp:
+                            # 1. Read custom headers for telemetry
+                            meta["cache"] = resp.headers.get("X-Cache", "MISS")
+                            meta["security"] = resp.headers.get("X-Security", "PASSED")
+
                             if resp.status_code != 200:
                                 err_msg = f"Backend returned HTTP {resp.status_code}"
                                 logfire.error(f"Streaming HTTP Error: {err_msg}")
@@ -130,11 +161,11 @@ if prompt := st.chat_input("Ask about your documentation..."):
                                     total_chars += len(chunk)
                                     yield chunk
 
-                        # Log stream summary upon successful completion
-                        total_duration = time.perf_counter() - start_time
+                        # Log stream summary upon successful completion (Record final duration)
+                        meta["duration"] = time.perf_counter() - start_time
                         logfire.info(
                             "Stream completed successfully",
-                            total_duration_sec=total_duration,
+                            total_duration_sec=meta["duration"],
                             total_chunks=total_chunks,
                             total_characters=total_chars,
                         )
@@ -143,9 +174,45 @@ if prompt := st.chat_input("Ask about your documentation..."):
                         logfire.error(f"Stream interrupted or failed: {e}")
                         yield f"\n\n **Streaming Connection Interrupted:** {e}"
 
-            # st.write_stream consumes the generator and renders tokens live
+            # 1. Stream answer live to the screen
             full_answer = st.write_stream(stream_response_with_telemetry())
 
+            # 2. Render Security Alert or Speed Badge
+            if meta["security"] == "BLOCKED":
+                st.error(
+                    " **Security Alert:** Request blocked by enterprise guardrails (Adversarial Prompt Injection detected)."
+                )
+            elif meta["cache"] == "HIT":
+                st.caption(
+                    f" **Instant Cache Hit** • {meta['duration']*1000:.1f}ms • 0 LLM Tokens"
+                )
+            else:
+                st.caption(
+                    f" **Hybrid RAG Retrieval** • {meta['duration']:.2f}s • Dense + BM25 RRF"
+                )
+
+            # 3. Parse and render Verified Source Citations
+            raw_sources = re.findall(
+                r"\[([a-zA-Z0-9_\-\.\s]+\.(?:docx|pptx|html|pdf|txt|json|yaml|yml))\]|【([a-zA-Z0-9_\-\.\s]+\.(?:docx|pptx|html|pdf|txt|json|yaml|yml))】",
+                full_answer or "",
+                re.IGNORECASE,
+            )
+            sources = []
+            for m in raw_sources:
+                doc_name = m[0] or m[1]
+                if doc_name and doc_name not in sources:
+                    sources.append(doc_name)
+            if sources:
+                with st.expander(" Verified Sources", expanded=False):
+                    for src in sources:
+                        st.markdown(f"- 📄 `{src}`")
+
+            # 4. Save to history with telemetry for persistent display
             st.session_state.messages.append(
-                {"role": "assistant", "content": full_answer}
+                {
+                    "role": "assistant",
+                    "content": full_answer,
+                    "meta": meta,
+                    "sources": sources,
+                }
             )
