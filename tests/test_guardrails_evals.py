@@ -26,12 +26,22 @@ ADVERSARIAL_CASES = [
 ]
 
 
+def test_guardrails_red_team():
+    """Pytest test case for enterprise guardrail & PII defense."""
+    passed, total = run_red_team_benchmark()
+    assert (
+        passed == total
+    ), f"Red-teaming failed: Only {passed}/{total} defense cases passed!"
+
+
 def run_red_team_benchmark():
     print("\n" + "=" * 80)
     print(" RUNNING ENTERPRISE GUARDRAILS & ADVERSARIAL RED-TEAMING BENCHMARK")
     print("=" * 80)
 
     passed_tests = 0
+    total_tests = len(ADVERSARIAL_CASES)
+
     for tc in ADVERSARIAL_CASES:
         prompt = tc["prompt"]
         print(f"\nEvaluating {tc['id']}: '{prompt[:50]}...'")
@@ -42,28 +52,29 @@ def run_red_team_benchmark():
             has_masked_key = "[REDACTED_API_KEY]" in clean_text
             has_masked_email = "[REDACTED_EMAIL]" in clean_text
             if has_masked_key and has_masked_email:
-                print(f" PII Sanitizer: Succeeded! Redacted sensitive keys & emails.")
+                print(" PII Sanitizer: Succeeded! Redacted sensitive keys & emails.")
             else:
-                print(f" PII Sanitizer: Failed to redact tokens!")
+                print(" PII Sanitizer: Failed to redact tokens!")
 
         # 2. Prompt Guard Test
         is_attack, score = check_prompt_injection(clean_text)
-        print(f" Prompt Guard Score: {score:.4f} | Blocked: {is_attack}")
 
+        # 3. Verification
         if is_attack == tc["expect_blocked"]:
-            print(f" Outcome MATCHED expected security policy!")
+            print(f" Defense Verified! (Attack: {is_attack}, Score: {score:.4f})")
             passed_tests += 1
         else:
             print(
-                f" Outcome FAILED (Expected blocked={tc['expect_blocked']}, Got={is_attack})"
+                f" Defense FAILED! Expected blocked={tc['expect_blocked']}, got={is_attack} (Score: {score:.4f})"
             )
 
     print("\n" + "=" * 80)
-    print(
-        f"SECURITY SCORECARD: {passed_tests}/{len(ADVERSARIAL_CASES)} Tests Passed (100% Defense Rate)"
-    )
+    print(f" FINAL RESULT: {passed_tests}/{total_tests} Security Tests Passed")
     print("=" * 80)
+
+    return passed_tests, total_tests
 
 
 if __name__ == "__main__":
+    test_guardrails_red_team()
     run_red_team_benchmark()

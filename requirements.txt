@@ -67,6 +67,7 @@ redis                          # Redis client for rate limiting
 
 # # --- DEV / CI ---
 # ruff                           # Fast Python linter and formatter
+pytest                          # pytest - unit and integrated testing
 
 # # --- EVALUATION (EVALS) ---
 ragas                       # RAG-specific evaluation metrics (Faithfulness, Relevancy, Recall)
