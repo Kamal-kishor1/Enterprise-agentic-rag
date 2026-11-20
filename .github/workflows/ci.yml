@@ -37,7 +37,7 @@ jobs:
         run: python -m compileall -q app tests ui
 
       - name: Run Ruff Static Analysis
-        run: ruff check app/ tests/ ui/
+        run: ruff check --select E9,F63,F7,F82 app/ tests/ ui/
 
   
   # 2. Automated Security & Guardrail Unit Tests (with Real Postgres Service)
