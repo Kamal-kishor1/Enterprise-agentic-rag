@@ -2,8 +2,6 @@ import os
 
 from dotenv import load_dotenv
 
-# from pydantic import BaseSettings, SettingsConfigDict
-
 load_dotenv()
 
 

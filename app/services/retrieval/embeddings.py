@@ -59,12 +59,18 @@ def _probe_gemini():
 
 
 def _load_fallback():
-    from sentence_transformers import SentenceTransformer
+    try:
+        from sentence_transformers import SentenceTransformer
 
-    logfire.info(
-        " Loading sentence-transformers fallback (all-mpnet-base-v2, 768-dim)."
-    )
-    return SentenceTransformer("all-mpnet-base-v2")
+        logfire.info(
+            " Loading sentence-transformers fallback (all-mpnet-base-v2, 768-dim)."
+        )
+        return SentenceTransformer("all-mpnet-base-v2")
+    except ImportError:
+        logfire.warning(
+            " sentence-transformers not installed; running in Gemini-only cloud mode."
+        )
+        return None
 
 
 def _init():
