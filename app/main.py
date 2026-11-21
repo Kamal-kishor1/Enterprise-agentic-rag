@@ -77,8 +77,9 @@ def get_graph_image():
         png_bytes = rag_agent.get_graph().draw_mermaid_png()
         return Response(content=png_bytes, media_type="image/png")
 
-    except Exception as e:
-        return {"error": f" Could not generate graph image: {e}"}
+    except Exception:
+        logfire.exception("Could not generate graph image")
+        return {"error": "Could not generate graph image."}
 
 
 @app.post("/query")
