@@ -1,7 +1,7 @@
 # -----------------------------------------------------------------------------
 # Stage 1: Base - System & Python Dependencies (Cached across targets)
 # -----------------------------------------------------------------------------
-FROM python:3.11-slim AS base
+FROM python:3.15-slim AS base
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
