@@ -1,15 +1,19 @@
 # 🧠 Enterprise Agentic RAG System
 
+[![Live Demo](https://img.shields.io/badge/Live_Demo-Streamlit_Cloud-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://agentic-rag-duevwyskduagcdkqhi6gqj.streamlit.app/)
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Render](https://img.shields.io/badge/Render-Backend_API-46E3B7?style=for-the-badge&logo=render&logoColor=white)](https://render.com/)
+[![Neon](https://img.shields.io/badge/Neon-Serverless_Postgres-00E599?style=for-the-badge&logo=postgresql&logoColor=white)](https://neon.tech/)
+[![Upstash](https://img.shields.io/badge/Upstash-Serverless_Redis-00E9A3?style=for-the-badge&logo=redis&logoColor=white)](https://upstash.com/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-State_Machine-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-Hybrid_RRF_Search-DC244C?style=for-the-badge&logo=qdrant&logoColor=white)](https://qdrant.tech/)
-[![Redis](https://img.shields.io/badge/Redis-7.0_Cache-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16_Checkpointer-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-Multi--Stage-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
 [![Locust](https://img.shields.io/badge/Locust-Load_Tested-708090?style=for-the-badge&logo=locust&logoColor=white)](https://locust.io/)
 [![GitHub Actions](https://img.shields.io/badge/CI-Automated_Pipeline-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/features/actions)
 
+> 🚀 **Live Production Application:** [https://agentic-rag-duevwyskduagcdkqhi6gqj.streamlit.app/](https://agentic-rag-duevwyskduagcdkqhi6gqj.streamlit.app/)
+>
 > **Enterprise Agentic RAG** is an asynchronous, hardened, multi-tier Retrieval-Augmented Generation platform engineered for high-concurrency enterprise deployments. It combines **LangGraph cyclic state machines**, **Qdrant dense + sparse hybrid search with Reciprocal Rank Fusion (RRF)**, **FlashRank cross-encoders**, a **resilient LiteLLM gateway**, **durable PostgreSQL session checkpointing**, **Redis response caching**, and **Llama-Prompt-Guard security rails** into an orchestrated microservice architecture.
 
 ---
@@ -79,6 +83,61 @@ flowchart TD
     SSETokenStream --> StreamlitUI
     SSETokenStream -.->|Async Cache Write| CacheTier
 ```
+
+---
+
+## 🌐 Cloud Production Deployment Topology
+
+The system is deployed across a decoupled, multi-cloud microservice architecture ensuring high availability, sub-5ms caching, and automated failover:
+
+```mermaid
+flowchart TD
+    subgraph FrontendPlatform ["Frontend Tier — Streamlit Community Cloud"]
+        User["👤 End User / Web Browser"]
+        StreamlitCloud["🖥️ Streamlit Cloud Dashboard\n(agentic-rag-duevwyskduagcdkqhi6gqj.streamlit.app)"]
+        User -->|Interactive Chat & SSE Streams| StreamlitCloud
+    end
+
+    subgraph BackendPlatform ["API & Agentic Tier — Render Web Service"]
+        RenderService["⚡ FastAPI Backend Engine\n(Dockerfile.backend on Render)\nDynamic $PORT • Health Check /health"]
+        StreamlitCloud -->|HTTPS / POST /query/stream| RenderService
+    end
+
+    subgraph DatabasePlatform ["Persistence Tier — Neon Serverless PostgreSQL"]
+        NeonDB[("🐘 Neon PostgreSQL 16\n(ep-...-pooler.neon.tech:5432)\nAsyncCompatiblePostgresSaver • Auto-Migrating")]
+        RenderService <-->|Connection Pooling / SSL| NeonDB
+    end
+
+    subgraph CachePlatform ["Caching Tier — Upstash Serverless Redis"]
+        UpstashRedis[("⚡ Upstash Redis Cache\n(frank-...upstash.io:6379)\nTLS/SSL (rediss://) • Volatile-LRU")]
+        RenderService <-->|Sub-5ms Latency / SHA-256 Keys| UpstashRedis
+    end
+
+    subgraph AIPlatforms ["AI & Vector Cloud Infrastructure"]
+        QdrantCloud[("🎯 Qdrant Cloud Cluster\nHybrid Dense + BM25 Sparse Vector Store")]
+        GroqCloud["⚡ Groq Cloud LPU\nPrimary: gpt-oss-120b | Fallback: gpt-oss-20b\nPrompt Guard: Llama-Prompt-Guard-2-86m"]
+        GeminiCloud["🧠 Google Gemini API\ngemini-embedding-2-preview (3072-dim)"]
+        LogfireCloud["📊 Pydantic Logfire\nDistributed Tracing & Real-time Spans"]
+        
+        RenderService <-->|RRF Hybrid Search| QdrantCloud
+        RenderService <-->|LiteLLM Resilient Router| GroqCloud
+        RenderService <-->|Dense Embeddings| GeminiCloud
+        RenderService -.->|OTel Spans & Metrics| LogfireCloud
+    end
+```
+
+### Production Microservices Matrix
+
+| Platform | Role | Service / Technology | Key Configuration & SLA |
+| :--- | :--- | :--- | :--- |
+| **Streamlit Cloud** | Frontend UI | `ui/app.py` | Real-time SSE token streaming, zero-latency state handling |
+| **Render** | API Gateway | FastAPI + Uvicorn (`Dockerfile.backend`) | Auto-deploy on `main`, dynamic `$PORT` binding, `/health` probe |
+| **Neon** | State Checkpoint | PostgreSQL 16 Serverless | Connection pooling (`-pooler`), SSL enforced, automatic schema migrations |
+| **Upstash** | Response Cache | Redis 7 Serverless (TLS) | Sub-5ms latency (co-located in AWS Ohio), SHA-256 query hashing, Volatile-LRU |
+| **Qdrant Cloud** | Vector Engine | Hybrid Dense + Sparse Vector DB | Reciprocal Rank Fusion (RRF), cosine metric, cloud payload filtering |
+| **Groq Cloud** | LLM Synthesis & Security | LPU Ultra-Fast Inference | LiteLLM routing (120B -> 20B failover), Prompt Guard 86M (<120ms) |
+| **Google Gemini** | Embeddings | `gemini-embedding-2-preview` | 3072-dimensional high-precision dense semantic vectors |
+| **Pydantic Logfire** | Observability | OpenTelemetry APM | Distributed tracing, token counters, latency percentiles |
 
 ---
 
@@ -171,12 +230,18 @@ flowchart LR
 
 ## 🚀 Quickstart & Deployment
 
-### Method 1: Instant Production Launch with Docker Compose (Recommended)
+### 🌐 Live Cloud Demo
+Launch the live, production-grade application immediately without any local setup:
+- **Streamlit Interactive UI:** [https://agentic-rag-duevwyskduagcdkqhi6gqj.streamlit.app/](https://agentic-rag-duevwyskduagcdkqhi6gqj.streamlit.app/)
+
+---
+
+### Method 1: Local Multi-Container Launch with Docker Compose (Recommended)
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/your-username/Production_Grade_Advanced_RAG.git
-   cd Production_Grade_Advanced_RAG
+   git clone https://github.com/Kamal-kishor1/Enterprise-agentic-rag.git
+   cd Enterprise-agentic-rag
    ```
 
 2. **Configure environment variables:**
