@@ -13,8 +13,9 @@ try:
         token=os.getenv("LOGFIRE_TOKEN"),
         send_to_logfire="if-token-present",
     )
-except Exception:
-    pass
+except Exception as e:
+    # Logfire is optional; continue startup if telemetry configuration fails.
+    logfire.warning("Logfire configuration failed; continuing without telemetry.", error=str(e))
 
 # Now safe to import app modules - logfire is already active
 
