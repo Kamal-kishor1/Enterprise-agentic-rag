@@ -3,7 +3,7 @@
 # ==============================================================================
 
 # --- CORE API & WEB FRAMEWORK ---
-fastapi>=0.115.0               # High-performance web framework for the API (Pydantic v2 native)
+fastapi>=0.165.0               # High-performance web framework for the API (Pydantic v2 native)
 pydantic>=2.14.3                # Data validation & type enforcement
 pydantic-settings>=2.5.0       # Environment settings management
 uvicorn[standard]              # ASGI server to run the FastAPI app
