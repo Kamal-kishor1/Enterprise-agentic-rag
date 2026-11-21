@@ -1,3 +1,4 @@
+import asyncio
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -55,11 +56,43 @@ def init_checkpointer():
             from psycopg_pool import ConnectionPool
             from langgraph.checkpoint.postgres import PostgresSaver
 
+            class AsyncCompatiblePostgresSaver(PostgresSaver):
+                """
+                PostgresSaver adapter that fulfills LangGraph's async contract (aget_tuple, aput, alist)
+                by running thread-safe connection pool queries in non-blocking worker threads.
+                """
+
+                async def aget_tuple(self, config):
+                    return await asyncio.to_thread(self.get_tuple, config)
+
+                async def aput(self, config, checkpoint, metadata, new_versions):
+                    return await asyncio.to_thread(
+                        self.put, config, checkpoint, metadata, new_versions
+                    )
+
+                async def aput_writes(self, config, writes, task_id):
+                    return await asyncio.to_thread(
+                        self.put_writes, config, writes, task_id
+                    )
+
+                async def alist(
+                    self, config=None, *, filter=None, before=None, limit=None
+                ):
+                    sync_items = await asyncio.to_thread(
+                        lambda: list(
+                            self.list(
+                                config, filter=filter, before=before, limit=limit
+                            )
+                        )
+                    )
+                    for item in sync_items:
+                        yield item
+
             # Pool manages concurrent worker connections efficiently
             pool = ConnectionPool(
                 conninfo=db_url, max_size=20, kwargs={"autocommit": True}
             )
-            postgres_saver = PostgresSaver(pool)
+            postgres_saver = AsyncCompatiblePostgresSaver(pool)
             # setup() runs database migrations / creates tables automatically!
             postgres_saver.setup()
             print(" Connected to PostgreSQL: Persistent checkpointer active.")

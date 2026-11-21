@@ -18,7 +18,7 @@ try:
     if not token:
         print("ERROR: LOGFIRE_TOKEN is empty or None! ")
 
-    logfire.configure(token=token)
+    logfire.configure(token=token, send_to_logfire="if-token-present")
 
     # logfire.instrument_requests()   # Disabled due to OpenTelemetry bug on windows
     LOGFIRE_STATUS = "Connected & Tracing"

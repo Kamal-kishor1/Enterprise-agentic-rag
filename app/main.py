@@ -8,7 +8,13 @@ from dotenv import load_dotenv
 from .config import settings
 
 load_dotenv()
-logfire.configure(token=os.getenv("LOGFIRE_TOKEN"))
+try:
+    logfire.configure(
+        token=os.getenv("LOGFIRE_TOKEN"),
+        send_to_logfire="if-token-present",
+    )
+except Exception:
+    pass
 
 # Now safe to import app modules - logfire is already active
 

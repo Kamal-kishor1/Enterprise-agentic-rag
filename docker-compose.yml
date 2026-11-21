@@ -1,13 +1,15 @@
+name: agentic_rag
+
 services:
   # 1. PostgreSQL - Durable Session Memory with Required Password
 
   postgres:
     image: postgres:16-alpine
-    container_name: rag_postgres
+    container_name: agentic_rag_postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgrespassword}
       POSTGRES_DB: ${POSTGRES_DB:-rag_memory}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
@@ -29,13 +31,13 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: rag_redis
+    container_name: agentic_rag_redis
     restart: unless-stopped
     command:
       [
         "redis-server",
         "--requirepass",
-        "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}",
+        "${REDIS_PASSWORD:-redispassword}",
       ]
     ports:
       - "${REDIS_PORT:-6379}:6379"
@@ -47,7 +49,7 @@ services:
           "CMD",
           "redis-cli",
           "-a",
-          "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}",
+          "${REDIS_PASSWORD:-redispassword}",
           "ping",
         ]
       interval: 5s
@@ -63,14 +65,14 @@ services:
       context: .
       dockerfile: Dockerfile
       target: backend
-    container_name: rag_backend
+    container_name: agentic_rag_backend
     restart: unless-stopped
     ports:
       - "${BACKEND_PORT:-8003}:8003"
     environment:
       # Internal Microservice Connections
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rag_memory}
-      - REDIS_URL=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379/0
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgrespassword}@postgres:5432/${POSTGRES_DB:-rag_memory}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redispassword}@redis:6379/0
       - PORT=8003
 
       # Mandatory Production AI / Vector Credentials
@@ -105,7 +107,7 @@ services:
       context: .
       dockerfile: Dockerfile
       target: frontend
-    container_name: rag_frontend
+    container_name: agentic_rag_frontend
     restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-8501}:8501"

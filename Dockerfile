@@ -17,7 +17,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install python dependencies
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # -----------------------------------------------------------------------------
 # Stage 2: Backend Target (FastAPI + LangGraph + Guardrails)
@@ -26,7 +27,7 @@ FROM base AS backend
 
 # Copy backend application code and local data/fallback files
 COPY app/ ./app/
-COPY data/ ./data/
+COPY processed_data/ ./processed_data/
 
 EXPOSE 8003
 
@@ -38,10 +39,11 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8003"]
 # -----------------------------------------------------------------------------
 FROM base AS frontend
 
-# Copy Streamlit UI code
+# Copy Streamlit UI code and config
 COPY ui/ ./ui/
+COPY .streamlit/ ./.streamlit/
 
 EXPOSE 8501
 
-# Run Streamlit on port 8501
-CMD ["streamlit", "run", "ui/app.py", "--server.port", "8501", "--server.address", "0.0.0.0", "--browser.gatherUsageStats", "false"]
+# Run Streamlit on port 8501 with CORS disabled for Docker networking
+CMD ["streamlit", "run", "ui/app.py", "--server.port", "8501", "--server.address", "0.0.0.0", "--server.headless", "true", "--server.enableCORS", "false", "--server.enableXsrfProtection", "false", "--browser.gatherUsageStats", "false"]

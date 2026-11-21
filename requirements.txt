@@ -1,78 +1,56 @@
 # ==============================================================================
-# ENTERPRISE AGENTIC RAG - REQUIREMENTS (Local, No GCP)
+# ENTERPRISE AGENTIC RAG - PRODUCTION REQUIREMENTS (Ultra-Lean & Render-Ready)
 # ==============================================================================
 
 # --- CORE API & WEB FRAMEWORK ---
-fastapi                     # High-performance web framework for the API
-uvicorn[standard]           # ASGI server to run the FastAPI app
-python-dotenv               # For loading configuration from .env files
-requests                    # HTTP library for internal/external API calls
-streamlit                   # Frontend dashboard for the chat interface
-numpy                       # Numerical processing
-# pytz                        # Timezone handling for logs
-# nest-asyncio                # Support for nested async loops in notebooks/streamlit
+fastapi>=0.115.0               # High-performance web framework for the API (Pydantic v2 native)
+pydantic>=2.9.0                # Data validation & type enforcement
+pydantic-settings>=2.5.0       # Environment settings management
+uvicorn[standard]              # ASGI server to run the FastAPI app
+python-dotenv                  # For loading configuration from .env files
+requests                       # HTTP library for internal/external API calls
+streamlit                      # Frontend dashboard for the chat interface
+numpy                          # Numerical processing
 
-# --- JINA API EMBEDDINGS + LOCAL FALLBACK ---
-google-generativeai        # Gemini API - embeddings (text-embedding)
-langchain-google-genai      # Langchain integration for Gemini models
-sentence-transformers       # Local fallback embeddings (mxbai-embed-large-v1)
-# torch                        # Required by sentence-transformers
+# --- CLOUD EMBEDDINGS (GEMINI API) ---
+google-generativeai            # Gemini API - embeddings (gemini-embedding-2-preview)
+langchain-google-genai         # LangChain integration for Gemini models
+# sentence-transformers        # Disabled: Legacy fallback that pulls ~2GB PyTorch. Production uses Gemini.
+# torch                        # Disabled: Avoids 2GB disk bloat and Render OOM crashes.
 
 # --- VECTOR DB & RETRIEVAL ---
-qdrant-client               # Vector Database for semantic search
-fastembed                   # Fast BM25 sparse embeddings for Qdrant hybrid search
-
+qdrant-client                  # Vector Database for hybrid search
+fastembed                      # Lightweight BM25 sparse embeddings (ONNX-based, no PyTorch)
+tenacity                       # Exponential retry-with-backoff for external calls
 
 # --- LANGCHAIN & AGENTIC ORCHESTRATION ---
-langchain                   # Core LLM orchestration
-langgraph                   # State-machine logic for cyclic agent flows
-# langchain-google-vertexai   # Required shim for NeMo Guardrails internal import (no GCP credentials needed)
-langchain-community         # Community-contributed tools and loaders
-# langchain-openai            # OpenAI-compatible layer (used by Portkey gateway + guardrails)
-# pydantic>=2.0.0             # Data validation and settings management
-# pydantic-settings           # Pydantic BaseSettings with dotenv support
+langchain                      # Core LLM orchestration
+langgraph                      # State-machine cyclic agent flows
+langchain-community            # Community tools and loaders
 
-# --- DATA INGESTION & DOCUMENT PARSING ---
-unstructured                # Base library for DOCX/PPTX partitioning
-python-pptx                 # Parser for PowerPoint files
-python-docx                 # Parser for Word documents
-pypdf                       # Local PDF text extraction (replaces Document AI)
-beautifulsoup4              # High-speed HTML text extraction
-pdfplumber                  # Fallback PDF parser for scanned/complex layouts
+# --- DATA INGESTION & DOCUMENT PARSING (Native, Lean Parsers) ---
+# unstructured                 # Disabled: Heavy dependency. We use native parsers below.
+python-pptx                    # Native PowerPoint parser
+python-docx                    # Native Word document parser
+pypdf                          # Native PDF text extraction
+beautifulsoup4                 # HTML text extraction & sanitization
+pdfplumber                     # Fallback PDF parser for complex layouts
 
-# --- OBSERVABILITY & DISTRIBUTED TRACING ---
-# langsmith                   # Specialized tracing for LangChain/LangGraph
-logfire[fastapi,requests]   # Pydantic Logfire — FastAPI + requests instrumentation
-loguru                      # Enhanced logging for Python
-flashrank                   # Reranking the vector in the vector db
+# --- OBSERVABILITY & LOCAL RERANKING ---
+logfire[fastapi,requests]      # Pydantic Logfire — distributed tracing & metrics
+loguru                         # Enhanced structured logging
+flashrank                      # High-speed local cross-encoder reranker (ONNX-based, no PyTorch)
 
-# # --- GUARDRAILS ---
-# nemoguardrails              # NVIDIA NeMo Guardrails for input/output safety rails
-# langchain-nvidia-ai-endpoints # LangChain integration with NVIDIA AI Endpoints
+# --- LLM GATEWAY & GUARDRAILS ---
+litellm                        # Multi-model LLM router with fallback & retries
+groq                           # Groq API client for ultra-fast synthesis & Prompt Guard
 
-# # --- LLM GATEWAY ---
-# portkey-ai                  # Portkey Gateway for unified LLM routing, fallbacks & observability
-litellm                     # industry standard lightweight Python proxy/router
-# ( Unified 100+ LLMs, langchain-compatible wrapper, built-in fallback lists and retry policies)
-
-# # --- PRODUCTION PERSISTENCE & RELIABILITY ---
-langgraph-checkpoint-postgres  # Postgres-backed LangGraph checkpointer
+# --- PERSISTENCE & MEMORY ---
+langgraph-checkpoint-postgres  # PostgreSQL-backed LangGraph checkpointer
 psycopg-pool                   # Connection pool for PostgresSaver
 psycopg-binary                 # PostgreSQL driver
-# tenacity                       # Retry-with-backoff for external calls
-# slowapi                        # Redis-backed API rate limiting (Limiter class)
-redis                          # Redis client for rate limiting
-# prometheus-client              # Prometheus metrics exposition
-# prometheus-fastapi-instrumentator  # Automatic FastAPI request metrics
+redis                          # Redis client for high-speed response caching
 
-# # --- DEV / CI ---
-# ruff                           # Fast Python linter and formatter
-pytest                          # pytest - unit and integrated testing
-
-# # --- EVALUATION (EVALS) ---
-ragas                       # RAG-specific evaluation metrics (Faithfulness, Relevancy, Recall)
-# deepeval                    # Pytest-compatible test runner wrapping RAGAS & safety metrics
-# langfuse                    # Live production monitoring, tracing & user feedback collection
-
-# # --- EMBEDDINGS (SENTENCE TRANSFORMERS) ---
-# sentence-transformers       # Local fallback embeddings (mxbai-embed-large-v1)
+# --- TESTING & BENCHMARKING (Moved to requirements-dev.txt for lean production images) ---
+# pytest                         # Moved to requirements-dev.txt
+# ragas                          # Moved to requirements-dev.txt

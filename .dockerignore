@@ -20,6 +20,7 @@ __pycache__/
 .env.*
 !.env.example
 .logfire
+.env.deployment
 
 # Test outputs & logs
 logs/
