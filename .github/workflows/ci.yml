@@ -115,7 +115,7 @@ jobs:
         run: docker compose config
 
       - name: Build Backend Docker Target
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: backend
@@ -123,7 +123,7 @@ jobs:
           tags: enterprise-rag-backend:ci
 
       - name: Build Frontend Docker Target
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: frontend
