@@ -5,7 +5,7 @@
 # --- CORE API & WEB FRAMEWORK ---
 fastapi>=0.115.0               # High-performance web framework for the API (Pydantic v2 native)
 pydantic>=2.14.3                # Data validation & type enforcement
-pydantic-settings>=2.5.0       # Environment settings management
+pydantic-settings>=2.16.3       # Environment settings management
 uvicorn[standard]              # ASGI server to run the FastAPI app
 python-dotenv                  # For loading configuration from .env files
 requests                       # HTTP library for internal/external API calls
